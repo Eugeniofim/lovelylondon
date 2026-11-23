@@ -42,6 +42,34 @@ var APP_CONFIG = {
   vapidPublica: '',
   agenteWhatsapp: '',
 
+  /* KIT DA VIAGEM (27/10/2026, kit-viagem.js): o link com tudo o que o cliente
+     precisa. Aqui mora o que e DELA: as cores (bordo + Skyline), as palavras e
+     as dicas padrao de Londres — so fatos certos; ela edita no painel. */
+  kit: {
+    artigo: 'a', servico: 'tour', servicos: 'tours',
+    dicasTitulo: 'Dicas para Londres',
+    mapaCidade: 'London',
+    dicas: [
+      'Emergência: 999 (o 112 também funciona).',
+      'A moeda é a libra esterlina (£). Cartão e celular por aproximação são aceitos em quase todo lugar.',
+      'Tomada: tipo G, de três pinos retangulares. Leve um adaptador.',
+      'No metrô e no ônibus, dá para pagar encostando o cartão ou o celular na catraca. Use sempre o mesmo cartão: o gasto do dia tem um teto.',
+      'Os carros andam pela esquerda: ao atravessar, olhe primeiro para a direita (está escrito no chão das faixas).',
+      'A água da torneira é potável.',
+    ],
+    levar: {
+      padrao: ['Sapato confortável', 'Guarda-chuva pequeno ou capa de chuva', 'Celular carregado e este kit'],
+      walk: ['Sapato confortável: o tour é a pé', 'Guarda-chuva pequeno ou capa de chuva', 'Uma garrafinha de água', 'Celular carregado e este kit'],
+      exclusivo: ['Sapato confortável', 'Guarda-chuva pequeno ou capa de chuva', 'Uma garrafinha de água', 'Celular carregado e este kit'],
+      museum: ['Os ingressos, quando não estão incluídos (veja "Não incluso")', 'Sapato confortável', 'Celular carregado e este kit'],
+      day: ['Documento com foto', 'Um casaco a mais e capa de chuva', 'Água e um lanche para a estrada', 'Celular carregado e este kit'],
+      consult: [],
+    },
+    cores: { faixa: '#700420', destaque: '#DAB59A', sobreFaixa: '#DAB59A', ctaTinta: '#700420', papel: '#FFF5F4', tinta: '#292828', tinta2: '#5C5354',
+      linha: '#E8DCD6', rotulo: '#955425', pago: '#E6F0E9', resta: '#F5EAE3' },
+    sql: 'LIGAR-KIT-CAROL.sql',
+  },
+
   guia: {
     nome: 'Carol',
     nomeCompleto: 'Carolina Carvalho',
@@ -85,7 +113,7 @@ var APP_CONFIG = {
     depoimentosVideoTxt: '',
     badge: 'Guia oficial Blue Badge · Londres',
     prefixo: 'LL',                 /* codigo da reserva: LL-4821 */
-    idiomas: 'Português · English',
+    idiomas: 'Português',
     /* Dois turnos: 4h de manha ou de tarde. Pacote de 6h ou 8h so de manha
        (ocupa o dia). Reuniao 28/09: "pacote de 4 horas e o de 8 horas… eu
        preciso fazer o pacote de 6 horas tambem". */
@@ -117,3 +145,7 @@ var APP_CONFIG = {
     },
   },
 };
+
+/* o orçamento premium (orcamento-premium.js): o imposto nasce DESLIGADO (pct 0 — ela liga
+   num orçamento se precisar); o logo vai na capa da proposta, numa caixa branca */
+APP_CONFIG.orc = { imposto: { nome: 'VAT', pct: 0 }, logo: 'arte/logo-claro.png', logoTopo: 'arte/logo-claro.png', capa: [] };

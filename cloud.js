@@ -12,7 +12,13 @@
    que nenhum banco fica gravado no codigo. */
 const SUPA_URL = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.supabaseUrl) || '';
 const SUPA_KEY = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.supabaseKey) || '';
-const QUEUE_KEY = 'vi_queue_v1';
+/* A fila tem dono. Os apps moram todos no mesmo endereço (guia.eugeniofim.com)
+   e dividiam a chave 'vi_queue_v1': o que ficava pendente num app era mandado
+   pelo app de outra guia para a sala DELA — a demonstração da raiz, sem banco,
+   enchia a fila, e o primeiro app com banco aberto naquele aparelho a esvaziava
+   no banco errado. Mesma regra do IA_NS do assistente: o prefixo do DB_KEY
+   (mario_queue_v1…); a raiz continua 'vi_queue_v1'. 18/10/2026. */
+const QUEUE_KEY = (typeof DB_KEY !== 'undefined' ? String(DB_KEY).replace(/_db_v\d+$/, '') : 'vi') + '_queue_v1';
 
 /* Sem prazo maximo, uma requisicao pendurada trava o app inteiro: foi isso
    que fez o login demorar um minuto. 12s e generoso ate para 3G ruim. */
@@ -22,8 +28,16 @@ function supaFetch(path, opts = {}) {
   /* Sem nuvem configurada, nada vai para a rede: a fila local segura tudo,
      como se estivesse offline. E o modo "prototipo" de um cliente novo. */
   if (!SUPA_URL) return Promise.reject(new Error('sem nuvem configurada (config.js)'));
-  /* logada, fala como ela; deslogado, fala como visitante */
-  const tok = (typeof authToken === 'function' && authToken()) || SUPA_KEY;
+  /* Login vencido (celular parado a noite toda): renova ANTES de falar com o banco.
+     Mandar o vencido = 401 = a tela entende "não existe" (achado em 29/10/2026). */
+  if (!opts.visitante && typeof authVencida === 'function' && authVencida() && typeof authEnsure === 'function')
+    return authEnsure().then(() => supaFetchJa(path, opts), () => supaFetchJa(path, opts));
+  return supaFetchJa(path, opts);
+}
+function supaFetchJa(path, tudo) {
+  const { visitante, ...opts } = tudo;
+  /* logada, fala como ela; deslogado (ou link público), fala como visitante */
+  const tok = (!visitante && typeof authToken === 'function' && authToken()) || SUPA_KEY;
   const ctrl = new AbortController();
   const corta = setTimeout(() => ctrl.abort(), REDE_TIMEOUT);
   return fetch(SUPA_URL + '/rest/v1/' + path, {
@@ -48,7 +62,11 @@ function supaFetch(path, opts = {}) {
 
 /* ---------- fila offline ---------- */
 function qAll() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)) || []; } catch (e) { return []; } }
-function qPush(job) { const q = qAll(); q.push(job); localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
+/* Sem banco não há fila: no tempo da demonstração o envio "falhava" (não
+   havia para onde mandar) e cada mexida em reserva ficava guardada aqui —
+   e seria mandada para o banco de verdade no dia em que ele fosse ligado.
+   Achado ao ligar a sala da Yalla, 18/10/2026. */
+function qPush(job) { if (!SUPA_URL) return; const q = qAll(); q.push(job); localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
 async function qFlush() {
   const q = qAll(); if (!q.length) return;
   const rest = [];
@@ -156,7 +174,7 @@ function cloudPushState() {
 /* Migracao unica: aparelhos que ja estao em uso tem reservas sem a marca.
    Tratar todas como pendentes manteria os fantasmas para sempre. Reserva
    com mais de uma hora ja teve tempo de subir — e se de fato nao subiu, a
-   fila (vi_queue_v1) reenvia por conta propria. */
+   fila (QUEUE_KEY) reenvia por conta propria. */
 function migraMarcaDeSincronia() {
   if (localStorage.getItem('vi_migr_naNuvem') === '1') return;
   const limite = Date.now() - 3600e3;
@@ -176,7 +194,16 @@ function marcaSincronizada(id) {
   if (b && !b.naNuvem) { b.naNuvem = true; localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
 }
 
-async function cloudPushBooking(b) {
+/* o PATCH de uma reserva espera o POST dela: saindo juntos, o PATCH chegava antes, achava 0 linhas e
+   o que ela mudou (sinal, textos do orçamento) se perdia (29/10/2026) */
+const _postando = new Map();
+function cloudPushBooking(b) {
+  const p = _cloudPushBooking(b);
+  _postando.set(b.id, p);
+  p.finally(() => { if (_postando.get(b.id) === p) _postando.delete(b.id); });
+  return p;
+}
+async function _cloudPushBooking(b) {
   const body = { id: b.id, data: b };
   try {
     const r = await supaFetch('bookings', { method: 'POST', body: JSON.stringify(body) });
@@ -187,6 +214,8 @@ async function cloudPushBooking(b) {
   } catch (e) { qPush({ path: 'bookings', method: 'POST', body }); return { ok: false }; }
 }
 async function cloudUpdateBooking(b) {
+  const pend = _postando.get(b.id);
+  if (pend) await pend.catch(() => {});
   const body = { data: b };
   const path = 'bookings?id=eq.' + encodeURIComponent(b.id);
   try {

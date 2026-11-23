@@ -298,6 +298,57 @@ function route() {
   document.body.classList.toggle('em-adm', p[0] === 'adm');
   faixaAcimaDaBarra();
   scrollTo(0, 0);
+  _assinaturaTela = assinaturaTela();
+}
+
+/* A TELA NÃO SOBE MAIS SOZINHA (30/10/2026 — o mesmo conserto da Dulcineia, que nasceu na Yalla em
+   28/10). Com o site aberto em duas abas (ou o app instalado junto com o navegador), cada gravação de
+   uma delas fazia a outra chamar route(): a tela voltava ao topo e o que estava digitado sumia. A
+   nuvem, quando chegava algo, fazia o mesmo. Agora: (1) só redesenha se o que aparece na tela mudou
+   de verdade; (2) na mesma altura e sem a animação de entrada; (3) nunca por cima de quem está
+   digitando; (4) o que foi digitado e não salvo volta para o campo, se a nuvem não mudou aquele campo. */
+let _assinaturaTela = '';
+function assinaturaTela() {
+  /* tudo o que o DB guarda, menos as marcas internas da sincronia (_itensEmDia…) */
+  try { return JSON.stringify(Object.keys(DB).filter(k => k[0] !== '_').sort().map(k => [k, DB[k]])); }
+  catch (e) { return String(Math.random()); }
+}
+function _camposSujos() {
+  const l = [];
+  document.querySelectorAll('#app input[id], #app textarea[id], #app select[id]').forEach(e => {
+    if (e.type === 'checkbox' || e.type === 'radio') { if (e.checked !== e.defaultChecked) l.push({ id: e.id, chk: e.checked, ori: e.defaultChecked }); }
+    else if (e.type === 'file') return;
+    else if (e.tagName === 'SELECT') { const d = [...e.options].find(o => o.defaultSelected); const ori = d ? d.value : ''; if (e.value !== ori) l.push({ id: e.id, v: e.value, ori, sel: true }); }
+    else if (e.value !== e.defaultValue) l.push({ id: e.id, v: e.value, ori: e.defaultValue });
+  });
+  return l;
+}
+function _devolveCampos(l) {
+  for (const c of l) {
+    const e = document.getElementById(c.id); if (!e) continue;
+    if ('chk' in c) { if (e.defaultChecked === c.ori) e.checked = c.chk; continue; }
+    const ori = c.sel ? ((([...e.options].find(o => o.defaultSelected)) || {}).value || '') : e.defaultValue;
+    if (ori === c.ori) e.value = c.v;   /* a nuvem não mexeu neste campo: o que foi digitado fica */
+  }
+}
+function redesenhaSuave(forcar) {
+  if (!forcar && assinaturaTela() === _assinaturaTela) return false;          /* nada mudou: a tela fica quieta */
+  if (isBusyEditing()) { pendingSync = true; return false; }
+  const y = scrollY, sujos = _camposSujos(), raiz = document.documentElement, alto = app.offsetHeight;
+  /* a rolagem do site é suave (html{scroll-behavior:smooth}): o scrollTo(0, 0) do route() e a volta
+     viravam uma animação de subir e descer. E, trocando o conteúdo, a página encolhia até as fotos
+     carregarem e o navegador puxava para cima. Durante a troca: rolagem seca e altura segura. */
+  raiz.style.scrollBehavior = 'auto';
+  app.style.minHeight = alto + 'px';
+  document.body.classList.add('sem-anima');
+  route();
+  _devolveCampos(sujos);
+  scrollTo(0, y);
+  requestAnimationFrame(() => {
+    scrollTo(0, y);
+    setTimeout(() => { document.body.classList.remove('sem-anima'); app.style.minHeight = ''; raiz.style.scrollBehavior = ''; }, 450);
+  });
+  return true;
 }
 
 /* A faixa do rodape (proposta / demonstracao) e a barra de abas do painel
@@ -653,7 +704,7 @@ function viewTour(id) {
           <div><small>${t('fGroup')}</small><b>${grupoTxt(x)}</b>
             ${x.privativo ? `<small class="sub">${t('privateSub')}</small>`
               : x.min > 1 ? `<small class="sub">${t('minNote', { n: x.min })}</small>` : ''}</div>
-          <div><small>${t('fLang')}</small><b>${esc((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.guia && APP_CONFIG.guia.idiomas) || 'PT · EN')}</b></div>
+          <div><small>${t('fLang')}</small><b>${esc(x.idiomas || (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.guia && APP_CONFIG.guia.idiomas) || 'Português')}</b></div>
         </div>
       </div>
 
@@ -1151,6 +1202,8 @@ function onCloudRejected() {
 }
 
 function admShell(tab, inner) {
+  /* a sincronia por linha (nuvem-itens.js) liga na primeira tela do painel, com a dona logada */
+  if (typeof itLigar === 'function') itLigar(() => redesenhaSuave());
   app.innerHTML = `
   <div class="adm">
     <aside class="rail">
@@ -1357,6 +1410,7 @@ function admTourEdit(id) {
         <p class="why">${t('edRouteWhy')}</p>
         <div class="frow">
           <label class="fld">${t('edDuration')}<input id="fDur" value="${esc(x.duration || '')}" placeholder="2h30"></label>
+          <label class="fld">${t('fLang')}<input id="fIdiomas" value="${esc(x.idiomas || '')}" placeholder="${esc((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.guia && APP_CONFIG.guia.idiomas) || 'Português')}"><small class="why">Vazio = só Português. Quando tiver habilitação em outro idioma, escreva aqui — ex.: Português · English · Español.</small></label>
           <label class="fld">${t('edDistance')}<input id="fDist" value="${esc(x.distance || '')}" placeholder="3 km"></label>
         </div>
         <div id="stopList"></div>
@@ -1544,6 +1598,7 @@ function admTourEdit(id) {
       trSig: x.trSig || {},
       photo: newPhoto || x.photo, status,
       duration: $('#fDur').value.trim(), distance: $('#fDist').value.trim(),
+      idiomas: $('#fIdiomas') ? $('#fIdiomas').value.trim() : (x.idiomas || ''),
       tagline:   par('#fTagPt', '#fTagEn'),
       priceNote: par('#fPNotePt', '#fPNoteEn'),
       cancel:    par('#fCancelPt', '#fCancelEn'),
@@ -2285,8 +2340,10 @@ function admSettings() {
       await Promise.all(chaves.map(k => caches.delete(k)));
     } catch (e) {}
     try {
-      localStorage.removeItem('vi_db_v1');
-      localStorage.removeItem('vi_queue_v1');
+      /* as chaves DESTE app: com as da raiz escritas à mão, o botão apagava
+         a demonstração da raiz e deixava a cópia daqui intacta (18/10/2026) */
+      localStorage.removeItem(DB_KEY);
+      localStorage.removeItem(QUEUE_KEY);
       localStorage.removeItem('vi_migr_naNuvem');
     } catch (e) {}
     location.reload();
@@ -2312,6 +2369,8 @@ function admSettings() {
     if (v && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v)) return toast(t('admAvisoBad'));
     DB.settings.admEmail = v;
     if ($('#avCli')) DB.settings.avisarClientes = $('#avCli').checked;
+    /* 27/10/2026: a escolha dela vale no servidor (função avisos): sem isto ele trata como ligado */
+    if ($('#avCli')) DB.settings.avisoClientesEscolhido = true;
     /* campo que nao esta na tela (e-mail ao cliente desligado) guarda o que ja havia */
     const pega = (id) => $('#' + id).value.trim();
     if ($('#reciboIntroPt')) {
@@ -2828,7 +2887,7 @@ addEventListener('hashchange', () => {
    Nao bloqueia o arranque: o app abre com o preco em euro e o valor em real
    entra quando a cotacao chegar. Se nunca chegar, simplesmente nao aparece. */
 if (typeof fxAtualiza === 'function') {
-  fxAtualiza().then((c) => { if (c && LANG === 'pt' && !isBusyEditing()) route(); });
+  fxAtualiza().then((c) => { if (c && LANG === 'pt' && !isBusyEditing()) redesenhaSuave(true); });
 }
 
 /* ---------- nuvem ---------- */
@@ -2839,9 +2898,8 @@ cloudStart((r) => {
     toast('🎉 ' + t('xNovaReserva') + ': ' + b.name + ' · ' + eur(b.total));
     if (typeof avisoReservaNaTela === 'function') avisoReservaNaTela();
   }
-  /* re-render seguro: nunca por cima de trabalho em andamento */
-  if (isBusyEditing()) { pendingSync = true; return; }
-route();
+  /* re-render seguro: só se mudou algo, na mesma altura, nunca por cima de trabalho em andamento */
+  redesenhaSuave();
 });
 
 /* FAIXA DE DEMONSTRACAO — enquanto nao ha banco (mesma da Ingrid e do Mario).
